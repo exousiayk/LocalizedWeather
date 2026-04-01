@@ -11,7 +11,7 @@ from shapely import points
 
 
 class MetaStation(object):
-    def __init__(self, lat_low, lat_up, lon_low, lon_up, n_years=5, control_ratio=0.9, shapefile_path=None,
+    def __init__(self, lat_low, lat_up, lon_low, lon_up, n_years=1, control_ratio=0.9, shapefile_path=None,
                  data_path=Path('')):
 
         self.lat_low = lat_low

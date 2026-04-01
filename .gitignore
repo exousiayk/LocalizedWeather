@@ -162,3 +162,71 @@ cython_debug/
 .DS_Store
 
 .idea/
+
+
+# ===== Project policy: code/docs only =====
+
+# Data roots
+DATA/
+WindDataNE-US/
+tmp/
+
+# Experiment outputs
+ModelOutputs/
+**/ModelOutputs/
+outputs/
+results/
+artifacts/
+figures/
+
+# ML artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.joblib
+*.pkl
+*.npz
+*.npy
+
+# Geospatial / scientific data
+*.nc
+*.h5
+*.hdf5
+*.parquet
+*.feather
+*.tif
+*.tiff
+*.grib
+*.grb
+*.shp
+*.shx
+*.dbf
+*.cpg
+*.prj
+*.gpkg
+*.geojson
+
+# Media outputs
+*.gif
+*.mp4
+*.avi
+*.mov
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# Logs / runtime files
+*.out
+*.err
+*.pid
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Keep docs and code
+!README.md
+!**/*.py
+!**/*.md
+!docs/images/*.png

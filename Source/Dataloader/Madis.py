@@ -12,7 +12,7 @@ from shapely import points
 
 class Madis(object):
     def __init__(self, times, coords_raw, coords, lat_low, lat_up, lon_low, lon_up, file_name, filtered_file_name,
-                 n_years=5,
+                 n_years=1,
                  data_path=Path('')):
 
         # n_years comes from meta station
@@ -130,9 +130,21 @@ class Madis(object):
 
         data = xr.open_mfdataset(data_path)
 
-        wind_speed_check = ((data.windSpeedDD == b'S') + (data.windSpeedDD == b'V'))
-        wind_direction_check = ((data.windDirDD == b'S') + (data.windDirDD == b'V'))
-        temperature_check = ((data.temperatureDD == b'S') + (data.temperatureDD == b'V'))
+        # First reduce by spatial bounds to shrink the expensive quality-filter pass.
+        lat_obs = data.latitude.values
+        lon_obs = data.longitude.values
+        spatial_mask = (self.lat_low <= lat_obs) & (lat_obs <= self.lat_up)
+        spatial_mask = spatial_mask & ((self.lon_low <= lon_obs) & (lon_obs <= self.lon_up))
+        spatial_idx = np.flatnonzero(spatial_mask)
+
+        if spatial_idx.size == 0:
+            return data.isel(index=slice(0, 0))
+                     
+        data = data.isel(index=spatial_idx)
+
+        wind_speed_check = (data.windSpeedDD == b'S') | (data.windSpeedDD == b'V')
+        wind_direction_check = (data.windDirDD == b'S') | (data.windDirDD == b'V')
+        temperature_check = (data.temperatureDD == b'S') | (data.temperatureDD == b'V')
         # Todo this should account for dynamic wind speed
         wind_speed_amplitude_check = (data.windSpeed < 50)
         validobs = wind_speed_check & wind_direction_check & temperature_check & wind_speed_amplitude_check
