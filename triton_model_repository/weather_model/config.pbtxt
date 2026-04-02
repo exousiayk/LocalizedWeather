@@ -1,0 +1,60 @@
+name: "weather_model"
+backend: "python"
+max_batch_size: 4
+
+input [
+  {
+    name: "madis_x"
+    data_type: TYPE_FP32
+    dims: [ -1, -1, -1 ]
+  },
+  {
+    name: "madis_lon"
+    data_type: TYPE_FP32
+    dims: [ -1, 1 ]
+  },
+  {
+    name: "madis_lat"
+    data_type: TYPE_FP32
+    dims: [ -1, 1 ]
+  },
+  {
+    name: "edge_index"
+    data_type: TYPE_INT64
+    dims: [ 2, -1 ]
+  },
+  {
+    name: "ex_lon"
+    data_type: TYPE_FP32
+    dims: [ -1, 1 ]
+  },
+  {
+    name: "ex_lat"
+    data_type: TYPE_FP32
+    dims: [ -1, 1 ]
+  },
+  {
+    name: "ex_x"
+    data_type: TYPE_FP32
+    dims: [ -1, -1, -1 ]
+  },
+  {
+    name: "edge_index_e2m"
+    data_type: TYPE_INT64
+    dims: [ 2, -1 ]
+  }
+]
+
+output [
+  {
+    name: "pred"
+    data_type: TYPE_FP32
+    dims: [ -1, -1 ]
+  }
+]
+
+instance_group [
+  {
+    kind: KIND_GPU
+  }
+]

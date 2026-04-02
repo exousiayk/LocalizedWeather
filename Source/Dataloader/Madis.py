@@ -12,7 +12,7 @@ from shapely import points
 
 class Madis(object):
     def __init__(self, times, coords_raw, coords, lat_low, lat_up, lon_low, lon_up, file_name, filtered_file_name,
-                 n_years=1,
+                 n_years=5,
                  data_path=Path('')):
 
         # n_years comes from meta station

@@ -62,7 +62,7 @@ if __name__ == '__main__':
     parser.add_argument('--show_progress_bar', default=1, type=int)
 
     # file systems
-    parser.add_argument('--data_path', default='/projects3/home/flag0220/LocalizedWeather/WindDataNE-US/', type=str)
+    parser.add_argument('--data_path', default='/workspace/WindDataNE-US/', type=str)
     parser.add_argument('--output_saving_path', default=None, type=str)
 
     parser.add_argument('--use_wb', default=0, type=int)
