@@ -229,4 +229,5 @@ figures/
 !README.md
 !**/*.py
 !**/*.md
+!**/*.pbtxt
 !docs/images/*.png

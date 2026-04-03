@@ -68,6 +68,8 @@ docker build -t weather-triton-server:latest .
 docker run --gpus=all --rm --name localized-weather-triton \
   -p 18000:8000 -p 18001:8001 -p 18002:8002 \
   -v "$PWD:/models" \
+  -v /projects3/home/flag0220/LocalizedWeather:/projects3/home/flag0220/LocalizedWeather \
+  -e LOCALIZED_WEATHER_ROOT=/projects3/home/flag0220/LocalizedWeather \
   weather-triton-server:latest \
   tritonserver --model-repository=/models
 ```

@@ -26,6 +26,7 @@ WORKDIR /workspace/Source
 # 3. [최적화] 파이썬 의존성 설치
 RUN pip install --upgrade pip && \
         pip install \
+            nvitop \
             numpy \
             pandas \
             xarray \
@@ -57,3 +58,9 @@ COPY . /workspace
 ENV PYTHONPATH=/workspace/Source:/workspace
 
 CMD ["bash"]
+
+# docker run --gpus all -it \
+#   --name weather_dev \
+#   -v /projects3/home/flag0220/LocalizedWeather:/workspace \
+#   -w /workspace/Source \
+#   weather:v1 bash
