@@ -403,7 +403,7 @@ class Main:
         if (new_valid_loss >= min_valid_loss) or (np.isnan(new_valid_loss)):
             return min_valid_loss
 
-        torch.save(model.state_dict(), os.path.join(output_saving_path, f'model_{metric}_{experiment_tag}_min.pt'))
+        torch.save(model.state_dict(), os.path.join(output_saving_path, f'model_{metric}_min.pt'))
 
         return new_valid_loss
 
@@ -414,33 +414,33 @@ class Main:
             file.write(serialized_data)
 
         serialized_data = pickle.dumps(evaluateModelTest.Targets)
-        with open(output_saving_path / f'Targets_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+        with open(output_saving_path / f'Targets_{metric}_min.pkl', 'wb') as file:
             file.write(serialized_data)
 
         serialized_data = pickle.dumps(evaluateModelTest.Preds)
-        with open(output_saving_path / f'Preds_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+        with open(output_saving_path / f'Preds_{metric}_min.pkl', 'wb') as file:
             file.write(serialized_data)
 
         serialized_data = pickle.dumps(evaluateModelTest.Times)
-        with open(output_saving_path / f'Times_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+        with open(output_saving_path / f'Times_{metric}_min.pkl', 'wb') as file:
             file.write(serialized_data)
 
         if evaluateModelTest.Preds_Seen is not None and evaluateModelTest.Targets_Seen is not None:
             serialized_data = pickle.dumps(evaluateModelTest.Preds_Seen)
-            with open(output_saving_path / f'Preds_seen_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+            with open(output_saving_path / f'Preds_seen_{metric}_min.pkl', 'wb') as file:
                 file.write(serialized_data)
 
             serialized_data = pickle.dumps(evaluateModelTest.Targets_Seen)
-            with open(output_saving_path / f'Targets_seen_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+            with open(output_saving_path / f'Targets_seen_{metric}_min.pkl', 'wb') as file:
                 file.write(serialized_data)
 
         if evaluateModelTest.Preds_Ghost is not None and evaluateModelTest.Targets_Ghost is not None:
             serialized_data = pickle.dumps(evaluateModelTest.Preds_Ghost)
-            with open(output_saving_path / f'Preds_ghost_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+            with open(output_saving_path / f'Preds_ghost_{metric}_min.pkl', 'wb') as file:
                 file.write(serialized_data)
 
             serialized_data = pickle.dumps(evaluateModelTest.Targets_Ghost)
-            with open(output_saving_path / f'Targets_ghost_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+            with open(output_saving_path / f'Targets_ghost_{metric}_min.pkl', 'wb') as file:
                 file.write(serialized_data)
 
         if hasattr(evaluateModelTest, 'save_metric_dict_seen'):
@@ -448,7 +448,7 @@ class Main:
                 'seen': {k.name: float(v) for k, v in evaluateModelTest.save_metric_dict_seen.items()},
                 'ghost': {k.name: float(v) for k, v in evaluateModelTest.save_metric_dict_ghost.items()},
             }
-            with open(output_saving_path / f'metrics_seen_ghost_{metric}_{experiment_tag}_min.json', 'w') as f:
+            with open(output_saving_path / f'metrics_seen_ghost_{metric}_min.json', 'w') as f:
                 json.dump(metric_dict, f, indent=2)
 
         if evaluateModelTest.Attns_Mean is not None:
@@ -490,7 +490,7 @@ class Main:
             evaluateModel = evaluateModelCaller()
 
             modelPath = os.path.join(output_saving_path,
-                                     f'model_{save_metric_type.name}_{self.experiment_tag}_min.pt')
+                                     f'model_{save_metric_type.name}_min.pt')
             state_dict = torch.load(modelPath, weights_only=True)
             evaluateModel.model.load_state_dict(state_dict)
 
