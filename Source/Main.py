@@ -2,6 +2,7 @@
 
 import os
 import pickle
+import json
 from pathlib import Path
 
 import geopandas as gpd
@@ -70,6 +71,11 @@ class Main:
         self.hrrr_analysis_only = args.hrrr_analysis_only
 
         self.interpolation_type = args.interpolation_type
+        self.ghost_holdout_ratio = args.ghost_holdout_ratio
+        self.ghost_init_mode = args.ghost_init_mode
+        self.ghost_split_seed = args.ghost_split_seed
+        self.sensor_dropout = args.sensor_dropout
+        self.sensor_dropout_ratio = args.sensor_dropout_ratio
 
         self.madis_vars_i = args.madis_vars_i
         self.madis_vars_o = args.madis_vars_o
@@ -81,6 +87,7 @@ class Main:
         self.figures_path.mkdir(exist_ok=True, parents=True)
 
         self.use_wb = args.use_wb
+        self.experiment_tag = self.GetExperimentTag()
 
         print('Experiment Configuration', flush=True)
 
@@ -104,6 +111,11 @@ class Main:
         self.madis_network = self.BuildMadisNetwork(meta_station, self.n_neighbors_m2m,
                                                     self.network_construction_method)
 
+        station_split = self.BuildStationSplit(self.madis_network.n_stations,
+                               self.ghost_holdout_ratio,
+                               self.ghost_split_seed)
+        self.SaveStationSplit(station_split)
+
         years = list(range(2024 - self.n_years, 2024))
 
         external_data_objects, self.external_len, self.external_network, n_neighbors_ex2m = self.BuildExternalNetwork(
@@ -117,7 +129,8 @@ class Main:
 
         Data_List = self.GetDataList(self.back_hrs, self.data_path, external_data_objects, self.external_network,
                                      self.external_vars,
-                                     self.lead_hrs, self.madis_vars, meta_station, years)
+                                     self.lead_hrs, self.madis_vars, meta_station, years, station_split,
+                                     self.ghost_init_mode, self.sensor_dropout, self.sensor_dropout_ratio)
 
         if external_data_objects:
             for k, year in enumerate(years):
@@ -174,7 +187,8 @@ class Main:
                                                           self.madis_vars, self.madis_vars_i, self.madis_vars_o, model,
                                                           self.model_type, optimizer, telemetry.per_variable_metrics,
                                                           self.per_variable_metrics_types, save_metrics,
-                                                          self.save_metrics_types, self.show_progress_bar)
+                                                          self.save_metrics_types, self.show_progress_bar,
+                                                          self.sensor_dropout, self.sensor_dropout_ratio)
 
         for epoch in range(self.epochs):
             evaluateModel = evaluateModel_fun()
@@ -189,11 +203,13 @@ class Main:
             telemetry.addLoss(valid_loss, per_variable_loss_valid, 'val')
 
             telemetry.report(epoch, self.lr)
+            self.ReportSeenGhostMetrics(evaluateModel, f'val epoch {epoch + 1}')
 
             for save_metric_type in self.save_metrics_types:
                 min_valid_losses[save_metric_type] = self.SaveModel(model, min_valid_losses[save_metric_type],
                                                                     evaluateModel.save_metric_dict[save_metric_type],
-                                                                    save_metric_type.name, self.output_saving_path)
+                                                                    save_metric_type.name, self.output_saving_path,
+                                                                    self.experiment_tag)
 
         best_metrics = self.AtTrainingEnd(self.save_metrics_types, evaluateModel_fun, self.madis_network,
                                           self.output_saving_path)
@@ -243,24 +259,71 @@ class Main:
         return model
 
     def GetDataList(self, back_hrs, data_path, external_data_objects, external_network, external_vars, lead_hrs,
-                    madis_vars, meta_station, years):
+                    madis_vars, meta_station, years, station_split, ghost_init_mode, sensor_dropout,
+                    sensor_dropout_ratio):
         Data_List = [MixData(year, back_hrs, lead_hrs, meta_station, self.madis_network, madis_vars, external_network,
                              external_vars, external_data_objects[year] if external_data_objects is not None else None,
+                             station_split=station_split,
+                             ghost_init_mode=ghost_init_mode,
+                             sensor_dropout=sensor_dropout,
+                             sensor_dropout_ratio=sensor_dropout_ratio,
                              data_path=data_path) for year in years]
         return Data_List
 
     def GetEvaluateModel(self, device, external_norm_dict, external_vars, lead_hrs, loaders, loss_function,
                          loss_function_report, madis_norm_dict, madis_vars, madis_vars_i, madis_vars_o, model,
                          model_type, optimizer, per_variable_metrics, per_variable_metrics_types, save_metrics,
-                         save_metrics_types, show_progress_bar):
+                         save_metrics_types, show_progress_bar, sensor_dropout, sensor_dropout_ratio):
         evaluateModel = EvaluateModel(model, loaders, madis_norm_dict, external_norm_dict, device, lead_hrs,
                                       madis_vars_i, madis_vars_o, madis_vars, external_vars,
                                       loss_function=loss_function, loss_function_report=loss_function_report,
                                       save_metrics_types=save_metrics_types, save_metrics_functions=save_metrics,
                                       per_variable_metrics_types=per_variable_metrics_types,
                                       per_variable_metrics=per_variable_metrics, model_type=model_type,
-                                      show_progress_bar=show_progress_bar, optimizer=optimizer)
+                                      show_progress_bar=show_progress_bar, optimizer=optimizer,
+                                      sensor_dropout=sensor_dropout,
+                                      sensor_dropout_ratio=sensor_dropout_ratio)
         return evaluateModel
+
+    def BuildStationSplit(self, n_stations, ghost_holdout_ratio, ghost_split_seed):
+        n_stations = int(n_stations)
+        n_ghost = int(np.floor(n_stations * ghost_holdout_ratio))
+        n_ghost = max(1, n_ghost)
+        n_ghost = min(n_ghost, n_stations - 1)
+
+        rng = np.random.RandomState(ghost_split_seed)
+        ghost_indices = np.sort(rng.choice(np.arange(n_stations), size=n_ghost, replace=False))
+        seen_mask = np.ones(n_stations, dtype=bool)
+        seen_mask[ghost_indices] = False
+        ghost_mask = ~seen_mask
+
+        return {
+            'n_stations': n_stations,
+            'ghost_holdout_ratio': float(ghost_holdout_ratio),
+            'ghost_split_seed': int(ghost_split_seed),
+            'ghost_indices': ghost_indices.astype(np.int64),
+            'seen_indices': np.where(seen_mask)[0].astype(np.int64),
+            'ghost_station_mask': ghost_mask,
+            'seen_station_mask': seen_mask,
+        }
+
+    def SaveStationSplit(self, station_split):
+        split_to_save = {
+            'n_stations': int(station_split['n_stations']),
+            'ghost_holdout_ratio': float(station_split['ghost_holdout_ratio']),
+            'ghost_split_seed': int(station_split['ghost_split_seed']),
+            'ghost_indices': station_split['ghost_indices'].tolist(),
+            'seen_indices': station_split['seen_indices'].tolist(),
+        }
+
+        with open(self.output_saving_path / 'station_split.json', 'w') as f:
+            json.dump(split_to_save, f, indent=2)
+
+    def GetExperimentTag(self):
+        init_name = self.ghost_init_mode.name.lower()
+        holdout_str = f"{int(round(self.ghost_holdout_ratio * 100.0))}"
+        dropout_name = 'true' if self.sensor_dropout else 'false'
+        return f"init-{init_name}_holdout-{holdout_str}_dropout-{dropout_name}"
 
     def CreateDataLoaders(self, Data_List, batch_size, n_years):
         Train_Dataset = ConcatDataset(Data_List[:int(n_years * 0.7)])
@@ -336,31 +399,57 @@ class Main:
     def BuildMadisNetwork(self, meta_station, n_neighbors_m2m, network_construction_method):
         return MadisNetwork(meta_station, n_neighbors_m2m, network_construction_method)
 
-    def SaveModel(self, model, min_valid_loss, new_valid_loss, metric, output_saving_path):
+    def SaveModel(self, model, min_valid_loss, new_valid_loss, metric, output_saving_path, experiment_tag):
         if (new_valid_loss >= min_valid_loss) or (np.isnan(new_valid_loss)):
             return min_valid_loss
 
-        torch.save(model.state_dict(), os.path.join(output_saving_path, f'model_{metric}_min.pt'))
+        torch.save(model.state_dict(), os.path.join(output_saving_path, f'model_{metric}_{experiment_tag}_min.pt'))
 
         return new_valid_loss
 
-    def SaveTest(self, evaluateModelTest, madis_network, metric, output_saving_path):
+    def SaveTest(self, evaluateModelTest, madis_network, metric, output_saving_path, experiment_tag):
 
         serialized_data = pickle.dumps(madis_network)
         with open(output_saving_path / f'madis_network.pkl', 'wb') as file:
             file.write(serialized_data)
 
         serialized_data = pickle.dumps(evaluateModelTest.Targets)
-        with open(output_saving_path / f'Targets_{metric}_min.pkl', 'wb') as file:
+        with open(output_saving_path / f'Targets_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
             file.write(serialized_data)
 
         serialized_data = pickle.dumps(evaluateModelTest.Preds)
-        with open(output_saving_path / f'Preds_{metric}_min.pkl', 'wb') as file:
+        with open(output_saving_path / f'Preds_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
             file.write(serialized_data)
 
         serialized_data = pickle.dumps(evaluateModelTest.Times)
-        with open(output_saving_path / f'Times_{metric}_min.pkl', 'wb') as file:
+        with open(output_saving_path / f'Times_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
             file.write(serialized_data)
+
+        if evaluateModelTest.Preds_Seen is not None and evaluateModelTest.Targets_Seen is not None:
+            serialized_data = pickle.dumps(evaluateModelTest.Preds_Seen)
+            with open(output_saving_path / f'Preds_seen_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+                file.write(serialized_data)
+
+            serialized_data = pickle.dumps(evaluateModelTest.Targets_Seen)
+            with open(output_saving_path / f'Targets_seen_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+                file.write(serialized_data)
+
+        if evaluateModelTest.Preds_Ghost is not None and evaluateModelTest.Targets_Ghost is not None:
+            serialized_data = pickle.dumps(evaluateModelTest.Preds_Ghost)
+            with open(output_saving_path / f'Preds_ghost_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+                file.write(serialized_data)
+
+            serialized_data = pickle.dumps(evaluateModelTest.Targets_Ghost)
+            with open(output_saving_path / f'Targets_ghost_{metric}_{experiment_tag}_min.pkl', 'wb') as file:
+                file.write(serialized_data)
+
+        if hasattr(evaluateModelTest, 'save_metric_dict_seen'):
+            metric_dict = {
+                'seen': {k.name: float(v) for k, v in evaluateModelTest.save_metric_dict_seen.items()},
+                'ghost': {k.name: float(v) for k, v in evaluateModelTest.save_metric_dict_ghost.items()},
+            }
+            with open(output_saving_path / f'metrics_seen_ghost_{metric}_{experiment_tag}_min.json', 'w') as f:
+                json.dump(metric_dict, f, indent=2)
 
         if evaluateModelTest.Attns_Mean is not None:
             serialized_data = pickle.dumps(evaluateModelTest.Attns_Mean)
@@ -372,22 +461,46 @@ class Main:
             with open(output_saving_path / f'Attns_{metric}_max.pkl', 'wb') as file:
                 file.write(serialized_data)
 
+    def ReportSeenGhostMetrics(self, evaluateModel, stage_name):
+        if not hasattr(evaluateModel, 'save_metric_dict_seen'):
+            return
+
+        report_parts = []
+        for save_metric_type in self.save_metrics_types:
+            seen_val = evaluateModel.save_metric_dict_seen.get(save_metric_type, np.nan)
+            ghost_val = evaluateModel.save_metric_dict_ghost.get(save_metric_type, np.nan)
+            report_parts.append(f"{save_metric_type.name}(sum): seen={seen_val:.5f}, ghost={ghost_val:.5f}")
+
+        if len(report_parts) > 0:
+            print(f"[{stage_name}] " + ' | '.join(report_parts), flush=True)
+
+        if hasattr(evaluateModel, 'per_variable_loss_seen'):
+            for per_metric_type in self.per_variable_metrics_types:
+                channel_parts = []
+                for madis_var in self.madis_vars_o:
+                    seen_val = evaluateModel.per_variable_loss_seen[madis_var].get(per_metric_type, np.nan)
+                    ghost_val = evaluateModel.per_variable_loss_ghost[madis_var].get(per_metric_type, np.nan)
+                    channel_parts.append(f"{madis_var.name}: seen={seen_val:.5f}, ghost={ghost_val:.5f}")
+                print(f"[{stage_name}] {per_metric_type.name}: " + ' | '.join(channel_parts), flush=True)
+
     def AtTrainingEnd(self, save_metrics_types, evaluateModelCaller, madis_network, output_saving_path):
         print('Runing best model for test set')
         best_metrics = dict()
         for save_metric_type in save_metrics_types:
             evaluateModel = evaluateModelCaller()
 
-            modelPath = os.path.join(output_saving_path, f'model_{save_metric_type.name}_min.pt')
+            modelPath = os.path.join(output_saving_path,
+                                     f'model_{save_metric_type.name}_{self.experiment_tag}_min.pt')
             state_dict = torch.load(modelPath, weights_only=True)
             evaluateModel.model.load_state_dict(state_dict)
 
             loss, per_variable_loss = evaluateModel.call_evaluate('test', True)
+            self.ReportSeenGhostMetrics(evaluateModel, f'test best-{save_metric_type.name}')
 
             best_metrics[save_metric_type] = dict()
             best_metrics[save_metric_type]['loss'] = loss
             best_metrics[save_metric_type]['per_variable_loss'] = per_variable_loss
 
-            self.SaveTest(evaluateModel, madis_network, save_metric_type.name, output_saving_path)
+            self.SaveTest(evaluateModel, madis_network, save_metric_type.name, output_saving_path, self.experiment_tag)
 
         return best_metrics

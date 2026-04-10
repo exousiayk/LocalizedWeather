@@ -112,3 +112,42 @@ RootDataPath/
         ├── stations_2019_2023_-80.53_-66.94_38.92_47.47northeastern_buffered_filtered_0.9.shp
         └── stations_2019_2023_-80.53_-66.94_38.92_47.47northeastern_buffered_filtered_0.9.shx
 ```
+
+    ## Ghost node generalization experiments (MPNN)
+
+    The training entrypoint now supports station-level ghost holdout, ghost initialization mode, and independent sensor dropout.
+
+    ### New options
+    - `--ghost_holdout_ratio`: station holdout ratio for ghost nodes (for example `0.1`, `0.2`)
+    - `--ghost_init_mode`: `0` for zero initialization, `1` for interpolation from seen-node neighbors
+    - `--ghost_split_seed`: fixed seed for reproducible seen/ghost station split
+    - `--sensor_dropout`: `0` or `1`, enables random masking of seen sensors during training
+    - `--sensor_dropout_ratio`: dropout ratio for seen sensors when `--sensor_dropout 1`
+
+    ### Example runs
+
+    Run from the `Source` directory.
+
+    ```bash
+    python Train.py --name ghost_h10_zero_do0 --model_type 1 --ghost_holdout_ratio 0.1 --ghost_init_mode 0 --sensor_dropout 0 --sensor_dropout_ratio 0.1 --ghost_split_seed 42
+    python Train.py --name ghost_h10_interp_do0 --model_type 1 --ghost_holdout_ratio 0.1 --ghost_init_mode 1 --sensor_dropout 0 --sensor_dropout_ratio 0.1 --ghost_split_seed 42
+    python Train.py --name ghost_h10_zero_do1 --model_type 1 --ghost_holdout_ratio 0.1 --ghost_init_mode 0 --sensor_dropout 1 --sensor_dropout_ratio 0.1 --ghost_split_seed 42
+    python Train.py --name ghost_h20_interp_do1 --model_type 1 --ghost_holdout_ratio 0.2 --ghost_init_mode 1 --sensor_dropout 1 --sensor_dropout_ratio 0.1 --ghost_split_seed 42
+    ```
+
+    ### Saved outputs
+
+    Each run now writes experiment-tagged files under `ModelOutputs/<name>/`:
+    - model checkpoint: `model_<metric>_init-<mode>_holdout-<pct>_dropout-<true|false>_min.pt`
+    - all-node test outputs: `Preds_...`, `Targets_...`, `Times_...`
+    - seen-node test outputs: `Preds_seen_...`, `Targets_seen_...`
+    - ghost-node test outputs: `Preds_ghost_...`, `Targets_ghost_...`
+    - split metadata: `station_split.json`
+    - seen/ghost metric summary: `metrics_seen_ghost_...json`
+
+    ### Summarize seen vs ghost performance
+
+    ```bash
+    python ../summarize_experiment.py --input_dir ../WindDataNE-US/ModelOutputs/ghost_h10_interp_do1 --metric CUSTOM --experiment_tag init-interp_holdout-10_dropout-true --node_scope seen
+    python ../summarize_experiment.py --input_dir ../WindDataNE-US/ModelOutputs/ghost_h10_interp_do1 --metric CUSTOM --experiment_tag init-interp_holdout-10_dropout-true --node_scope ghost
+    ```

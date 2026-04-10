@@ -40,3 +40,8 @@ class EnvVariables(Enum):
 class ScalingType(Enum):
     MinMax = 0
     Standard = 1
+
+
+class GhostInitMode(Enum):
+    ZERO = 0
+    INTERP = 1

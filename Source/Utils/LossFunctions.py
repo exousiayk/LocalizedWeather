@@ -53,9 +53,13 @@ def custom_loss(output, target, u_index, v_index, other_index, logical=None, red
 
 def GetLossFunction(loss_function_type, madis_vars_o):
     if loss_function_type == LossFunctionType.MSE:
-        loss_function = lambda output, target, logical: nn.MSELoss(reduction='mean')(output, target)
+        def loss_function(output, target, logical):
+            error = (output - target) ** 2
+            if logical is not None:
+                error = error[logical]
+            return torch.mean(error)
     elif loss_function_type == LossFunctionType.WIND_VECTOR:
-        loss_function = lambda output, target, logical: wind_loss(output, target)
+        loss_function = lambda output, target, logical: wind_loss(output, target, logical=logical)
     elif loss_function_type == LossFunctionType.CUSTOM:
         u_index = np.array(madis_vars_o) == EnvVariables.u
         v_index = np.array(madis_vars_o) == EnvVariables.v
@@ -64,7 +68,8 @@ def GetLossFunction(loss_function_type, madis_vars_o):
         v_index = np.where(v_index)[0][0]
         other_index = np.where(other_index)[0]
 
-        loss_function = lambda output, target, logical: custom_loss(output, target, u_index, v_index, other_index)
+        loss_function = lambda output, target, logical: custom_loss(output, target, u_index, v_index, other_index,
+                                        logical=logical)
     else:
         raise ValueError(f"Unknown loss function type: {loss_function_type}")
 
@@ -96,11 +101,19 @@ def SetupSaveMetrics(save_metrics_types, madis_vars_o):
     save_metrics = dict()
     for save_metric_type in save_metrics_types:
         if save_metric_type == LossFunctionType.MSE:
-            save_metrics[save_metric_type] = lambda output, target, logical: nn.MSELoss(reduction='sum')(output, target)
+            def mse_sum(output, target, logical):
+                error = (output - target) ** 2
+                if logical is not None:
+                    error = error[logical]
+                return torch.sum(error)
+
+            save_metrics[save_metric_type] = mse_sum
             continue
 
         if save_metric_type == LossFunctionType.WIND_VECTOR:
-            save_metrics[save_metric_type] = lambda output, target, logical: wind_loss(output, target, reduction='sum')
+            save_metrics[save_metric_type] = lambda output, target, logical: wind_loss(output, target,
+                                                                                    logical=logical,
+                                                                                    reduction='sum')
             continue
 
         if save_metric_type == LossFunctionType.CUSTOM:
@@ -113,7 +126,9 @@ def SetupSaveMetrics(save_metrics_types, madis_vars_o):
 
             save_metrics[save_metric_type] = lambda output, target, logical: custom_loss(output, target, u_index,
                                                                                          v_index,
-                                                                                         other_index, reduction='sum')
+                                                                                         other_index,
+                                                                                         logical=logical,
+                                                                                         reduction='sum')
             continue
 
     return save_metrics

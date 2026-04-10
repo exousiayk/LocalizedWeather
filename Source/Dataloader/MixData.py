@@ -11,11 +11,13 @@ from torch.utils.data import Dataset
 
 from Dataloader.Madis import Madis
 from Normalization.Normalizers import MinMaxNormalizer
+from Settings.Settings import GhostInitMode
 
 
 class MixData(Dataset):
     def __init__(self, year, back_hrs, lead_hours, meta_station, madis_network, madis_vars,
-                 external_network, external_vars, external_data_object, data_path=Path('')):
+                 external_network, external_vars, external_data_object, station_split,
+                 ghost_init_mode, sensor_dropout, sensor_dropout_ratio, data_path=Path('')):
 
         self.year = year
         self.back_hrs = back_hrs
@@ -27,6 +29,10 @@ class MixData(Dataset):
 
         self.external_network = external_network
         self.external_data_object = external_data_object
+        self.station_split = station_split
+        self.ghost_init_mode = ghost_init_mode
+        self.sensor_dropout = sensor_dropout
+        self.sensor_dropout_ratio = sensor_dropout_ratio
 
         self.time_line = pd.to_datetime(pd.Series(list(
             rrule.rrule(rrule.HOURLY, dtstart=datetime.strptime(f'{year}-01-01', '%Y-%m-%d'),
@@ -39,6 +45,11 @@ class MixData(Dataset):
         self.stat_lons = np.array([i.x for i in self.stat_coords])
         self.stat_lats = np.array([i.y for i in self.stat_coords])
         self.n_stations = len(self.stat_coords)
+        self.seen_station_mask = self.station_split['seen_station_mask'].astype(bool)
+        self.ghost_station_mask = self.station_split['ghost_station_mask'].astype(bool)
+        self.seen_station_indices = np.where(self.seen_station_mask)[0]
+        self.ghost_station_indices = np.where(self.ghost_station_mask)[0]
+        self.ghost_knn_indices = self._build_ghost_neighbor_indices(k=4)
 
         self.Madis = Madis(self.time_line, stat_coords_raw, self.stat_coords, meta_station.lat_low, meta_station.lat_up,
                            meta_station.lon_low, meta_station.lon_up, meta_station.file_name,
@@ -105,12 +116,16 @@ class MixData(Dataset):
         madis_data = self.madis_data.sel(time=slice(time_sel[0], time_sel[-1]))
         for madis_var in self.madis_vars:
             madis_val = madis_data[madis_var.name].values.astype(np.float32)
+            madis_val = self._apply_ghost_initialization(madis_val)
             madis_val = torch.from_numpy(madis_val)
             sample[madis_var] = madis_val
 
             var_name_is_real = madis_var.name + '_is_real'
             madis_val_is_real = madis_data[var_name_is_real].values.astype(np.float32)
             sample[var_name_is_real] = madis_val_is_real
+
+        sample['seen_station_mask'] = torch.from_numpy(self.seen_station_mask.astype(np.float32))
+        sample['ghost_station_mask'] = torch.from_numpy(self.ghost_station_mask.astype(np.float32))
 
         if self.external_data_object is not None:
             if self.external_network is not None:
@@ -128,3 +143,47 @@ class MixData(Dataset):
                 sample['ext_' + external_var.name] = external_val
 
         return sample
+
+    def _apply_ghost_initialization(self, madis_val):
+        madis_val = madis_val.copy()
+        hist_len = self.back_hrs + 1
+
+        if self.ghost_station_indices.size == 0:
+            return madis_val
+
+        if self.ghost_init_mode == GhostInitMode.ZERO:
+            madis_val[self.ghost_station_indices, :hist_len] = 0.0
+            return madis_val
+
+        if self.ghost_init_mode == GhostInitMode.INTERP:
+            for local_idx, ghost_idx in enumerate(self.ghost_station_indices):
+                neighbor_ids = self.ghost_knn_indices[local_idx]
+                if neighbor_ids.size == 0:
+                    madis_val[ghost_idx, :hist_len] = 0.0
+                    continue
+                madis_val[ghost_idx, :hist_len] = np.mean(madis_val[neighbor_ids, :hist_len], axis=0)
+            return madis_val
+
+        raise ValueError(f'Unsupported ghost init mode: {self.ghost_init_mode}')
+
+    def _build_ghost_neighbor_indices(self, k=4):
+        if self.ghost_station_indices.size == 0:
+            return np.zeros((0, 0), dtype=np.int64)
+
+        if self.seen_station_indices.size == 0:
+            return np.zeros((len(self.ghost_station_indices), 0), dtype=np.int64)
+
+        seen_lons = self.stat_lons[self.seen_station_indices]
+        seen_lats = self.stat_lats[self.seen_station_indices]
+        ghost_lons = self.stat_lons[self.ghost_station_indices]
+        ghost_lats = self.stat_lats[self.ghost_station_indices]
+
+        n_k = min(k, len(self.seen_station_indices))
+        all_neighbors = []
+        for ghost_lon, ghost_lat in zip(ghost_lons, ghost_lats):
+            dist = np.sqrt((seen_lons - ghost_lon) ** 2 + (seen_lats - ghost_lat) ** 2)
+            nn_local = np.argsort(dist)[:n_k]
+            nn_global = self.seen_station_indices[nn_local]
+            all_neighbors.append(nn_global.astype(np.int64))
+
+        return np.stack(all_neighbors, axis=0)

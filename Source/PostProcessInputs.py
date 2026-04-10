@@ -6,6 +6,7 @@ def PostProcessArgs(args):
     args.network_construction_method = NetworkConstructionMethod(args.network_construction_method)
     args.loss_function_type = LossFunctionType(args.loss_function_type)
     args.interpolation_type = InterpolationType(args.interpolation_type)
+    args.ghost_init_mode = GhostInitMode(args.ghost_init_mode)
     args.hrrr_analysis_only = args.hrrr_analysis_only == 1
 
     args.madis_vars_i = [EnvVariables(variable_k) for variable_k in args.madis_vars_i]

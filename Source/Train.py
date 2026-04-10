@@ -18,7 +18,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('--name', default='gnn_test', type=str)
+    parser.add_argument('--name', default='gnn_ghost_test_2', type=str)
     parser.add_argument('--gpus', default='0', type=str)
 
     parser.add_argument('--model_type', default=ModelType.GNN.value, type=int)
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     parser.add_argument('--lead_hrs', default=12, type=int)
     parser.add_argument('--back_hrs', default=48, type=int)
     parser.add_argument('--n_neighbors_m2m', default=4, type=int)
-    parser.add_argument('--n_neighbors_e2m', default=4, type=int)
+    parser.add_argument('--n_neighbors_e2m', default=1, type=int)
     parser.add_argument('--n_neighbors_h2m', default=0, type=int)
 
     parser.add_argument('--hrrr_analysis_only', default=0, type=int)
@@ -58,11 +58,18 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', default=1e-4, type=float)
     parser.add_argument('--n_passing', default=4, type=int)
 
+    # Ghost node generalization options
+    parser.add_argument('--ghost_holdout_ratio', default=0.1, type=float)
+    parser.add_argument('--ghost_init_mode', default=GhostInitMode.ZERO.value, type=int)
+    parser.add_argument('--ghost_split_seed', default=42, type=int)
+    parser.add_argument('--sensor_dropout', default=0, type=int)
+    parser.add_argument('--sensor_dropout_ratio', default=0, type=float)
+
     # code setup
     parser.add_argument('--show_progress_bar', default=1, type=int)
 
     # file systems
-    parser.add_argument('--data_path', default='/projects3/home/flag0220/LocalizedWeather/WindDataNE-US/', type=str)
+    parser.add_argument('--data_path', default='/workspace/WindDataNE-US/', type=str)
     parser.add_argument('--output_saving_path', default=None, type=str)
 
     parser.add_argument('--use_wb', default=0, type=int)
@@ -73,6 +80,7 @@ if __name__ == '__main__':
     # 정수로 받은 0과 1을 불리언(True/False)으로 변환합니다.
     args.hrrr_analysis_only = args.hrrr_analysis_only == 1
     args.show_progress_bar = args.show_progress_bar == 1
+    args.sensor_dropout = args.sensor_dropout == 1
     
     # Name 파라미터를 기반으로 새로운 저장 경로 지정
     args.output_saving_path = f'ModelOutputs/{args.name}'
