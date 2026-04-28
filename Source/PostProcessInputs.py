@@ -8,6 +8,7 @@ def PostProcessArgs(args):
     args.interpolation_type = InterpolationType(args.interpolation_type)
     args.ghost_init_mode = GhostInitMode(args.ghost_init_mode)
     args.hrrr_analysis_only = args.hrrr_analysis_only == 1
+    args.past_only = args.past_only == 1
 
     args.madis_vars_i = [EnvVariables(variable_k) for variable_k in args.madis_vars_i]
     args.madis_vars_o = [EnvVariables(variable_k) for variable_k in args.madis_vars_o]

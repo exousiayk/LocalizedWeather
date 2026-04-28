@@ -47,10 +47,11 @@ class Main:
 
         self.back_hrs = args.back_hrs
         self.lead_hrs = args.lead_hrs
+        self.past_only = args.past_only
         self.whole_len = self.back_hrs + 1
 
         self.Madis_len = self.whole_len
-        self.external_len = self.whole_len + self.lead_hrs
+        self.external_len = self.whole_len if self.past_only else self.whole_len + self.lead_hrs
         self.hidden_dim = args.hidden_dim
         self.lr = args.lr
         self.loss_function_type = args.loss_function_type
@@ -125,12 +126,13 @@ class Main:
             self.interpolation_type, self.lead_hrs,
             self.madis_network, meta_station,
             self.n_neighbors_e2m, self.n_neighbors_h2m,
-            self.whole_len, years)
+            self.whole_len, years, self.past_only)
 
         Data_List = self.GetDataList(self.back_hrs, self.data_path, external_data_objects, self.external_network,
                                      self.external_vars,
                                      self.lead_hrs, self.madis_vars, meta_station, years, station_split,
-                                     self.ghost_init_mode, self.sensor_dropout, self.sensor_dropout_ratio)
+                                     self.ghost_init_mode, self.sensor_dropout, self.sensor_dropout_ratio,
+                                     self.past_only)
 
         if external_data_objects:
             for k, year in enumerate(years):
@@ -188,7 +190,8 @@ class Main:
                                                           self.model_type, optimizer, telemetry.per_variable_metrics,
                                                           self.per_variable_metrics_types, save_metrics,
                                                           self.save_metrics_types, self.show_progress_bar,
-                                                          self.sensor_dropout, self.sensor_dropout_ratio)
+                                                          self.sensor_dropout, self.sensor_dropout_ratio,
+                                                          self.past_only)
 
         for epoch in range(self.epochs):
             evaluateModel = evaluateModel_fun()
@@ -260,20 +263,21 @@ class Main:
 
     def GetDataList(self, back_hrs, data_path, external_data_objects, external_network, external_vars, lead_hrs,
                     madis_vars, meta_station, years, station_split, ghost_init_mode, sensor_dropout,
-                    sensor_dropout_ratio):
+                    sensor_dropout_ratio, past_only):
         Data_List = [MixData(year, back_hrs, lead_hrs, meta_station, self.madis_network, madis_vars, external_network,
                              external_vars, external_data_objects[year] if external_data_objects is not None else None,
                              station_split=station_split,
                              ghost_init_mode=ghost_init_mode,
                              sensor_dropout=sensor_dropout,
                              sensor_dropout_ratio=sensor_dropout_ratio,
+                             past_only=past_only,
                              data_path=data_path) for year in years]
         return Data_List
 
     def GetEvaluateModel(self, device, external_norm_dict, external_vars, lead_hrs, loaders, loss_function,
                          loss_function_report, madis_norm_dict, madis_vars, madis_vars_i, madis_vars_o, model,
                          model_type, optimizer, per_variable_metrics, per_variable_metrics_types, save_metrics,
-                         save_metrics_types, show_progress_bar, sensor_dropout, sensor_dropout_ratio):
+                         save_metrics_types, show_progress_bar, sensor_dropout, sensor_dropout_ratio, past_only):
         evaluateModel = EvaluateModel(model, loaders, madis_norm_dict, external_norm_dict, device, lead_hrs,
                                       madis_vars_i, madis_vars_o, madis_vars, external_vars,
                                       loss_function=loss_function, loss_function_report=loss_function_report,
@@ -282,7 +286,8 @@ class Main:
                                       per_variable_metrics=per_variable_metrics, model_type=model_type,
                                       show_progress_bar=show_progress_bar, optimizer=optimizer,
                                       sensor_dropout=sensor_dropout,
-                                      sensor_dropout_ratio=sensor_dropout_ratio)
+                                      sensor_dropout_ratio=sensor_dropout_ratio,
+                                      past_only=past_only)
         return evaluateModel
 
     def BuildStationSplit(self, n_stations, ghost_holdout_ratio, ghost_split_seed):
@@ -341,7 +346,7 @@ class Main:
 
     def BuildExternalNetwork(self, data_path, external_len,
                              hrrr_analysis_only, interpolation_type, lead_hrs, madis_network, meta_station,
-                             n_neighbors_e2m, n_neighbors_h2m, whole_len, years):
+                             n_neighbors_e2m, n_neighbors_h2m, whole_len, years, past_only):
 
         external_data_objects = None
         external_network = None
@@ -383,7 +388,7 @@ class Main:
 
             external_network = HRRNetwork(external_data_objects[years[0]].data, madis_network, n_neighbors_h2m)
 
-            if not hrrr_analysis_only:
+            if (not hrrr_analysis_only) and (not past_only):
                 external_len = whole_len + np.min([lead_hrs, 18])
 
             n_neighbors_ex2m = n_neighbors_h2m

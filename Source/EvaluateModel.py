@@ -14,7 +14,7 @@ class EvaluateModel:
                  madis_vars_o, madis_vars, external_vars, loss_function=None, loss_function_report=None,
                  save_metrics_types=None, save_metrics_functions=None, per_variable_metrics_types=None,
                  per_variable_metrics=None, model_type=ModelType.GNN, show_progress_bar=False, optimizer=None,
-                 sensor_dropout=False, sensor_dropout_ratio=0.1):
+                 sensor_dropout=False, sensor_dropout_ratio=0.1, past_only=False):
         self.model = model
         self.data_loaders = data_loaders
         self.madis_norm_dict = madis_norm_dict
@@ -36,6 +36,7 @@ class EvaluateModel:
         self.optimizer = optimizer
         self.sensor_dropout = sensor_dropout
         self.sensor_dropout_ratio = sensor_dropout_ratio
+        self.past_only = past_only
 
     def call_evaluate(self, station_type='train', save=False):
         data_loader = self.data_loaders[station_type]
@@ -301,11 +302,18 @@ class EvaluateModel:
     def GetIsReal(self):
         is_real_list = []
         for var in self.madis_vars_o:
-            is_real = self.sample.get(var.name + '_is_real').to(self.device)
-            # Keep only the forecast target timestep to align with y/out shape: (batch, station, variable)
-            if is_real.dim() == 2:
-                is_real = is_real.unsqueeze(0)
-            is_real = (is_real[:, :, -1] == 1).unsqueeze(-1)
+            target_is_real_key = 'target_' + var.name + '_is_real'
+            if self.past_only and (target_is_real_key in self.sample):
+                is_real = self.sample.get(target_is_real_key).to(self.device)
+                if is_real.dim() == 1:
+                    is_real = is_real.unsqueeze(0)
+                is_real = (is_real == 1).unsqueeze(-1)
+            else:
+                is_real = self.sample.get(var.name + '_is_real').to(self.device)
+                # Keep only the forecast target timestep to align with y/out shape: (batch, station, variable)
+                if is_real.dim() == 2:
+                    is_real = is_real.unsqueeze(0)
+                is_real = (is_real[:, :, -1] == 1).unsqueeze(-1)
             is_real_list.append(is_real)
         return torch.cat(is_real_list, dim=-1)
 
@@ -361,7 +369,7 @@ class EvaluateModel:
         for madis_var in self.madis_vars:
             madis_vals_dict[madis_var] = sample[madis_var]
             madis_vals_dict[madis_var] = self.madis_norm_dict[madis_var].encode(madis_vals_dict[madis_var]).unsqueeze(3)
-        y = self.GetTarget(madis_vals_dict).to(self.device)
+        y = self.GetTarget(madis_vals_dict, sample).to(self.device)
         madis_x = self.GetMadisInputs(madis_vals_dict).to(self.device)
         return edge_index_m2m, madis_lat, madis_lon, madis_x, y
 
@@ -377,11 +385,22 @@ class EvaluateModel:
 
     def GetMadisInputs(self, madis_vals_dict):
         madis_x = torch.cat(list(map(madis_vals_dict.get, self.madis_vars_i)), dim=-1)
+        if self.past_only:
+            return madis_x
         madis_matrix_len = madis_x.shape[2]
         madis_x = madis_x[:, :, :madis_matrix_len - self.lead_hrs, :]
         return madis_x
 
-    def GetTarget(self, madis_vals_dict):
+    def GetTarget(self, madis_vals_dict, sample):
+        target_key = 'target_' + self.madis_vars_o[0].name
+        if self.past_only and (target_key in sample):
+            target_list = []
+            for var in self.madis_vars_o:
+                target_val = sample['target_' + var.name]
+                if target_val.dim() == 1:
+                    target_val = target_val.unsqueeze(0)
+                target_list.append(self.madis_norm_dict[var].encode(target_val).unsqueeze(-1))
+            return torch.cat(target_list, dim=-1)
         y = torch.cat(list(map(lambda var: madis_vals_dict.get(var)[:, :, -1, :], self.madis_vars_o)), dim=-1)
         return y
 

@@ -17,7 +17,7 @@ from Settings.Settings import GhostInitMode
 class MixData(Dataset):
     def __init__(self, year, back_hrs, lead_hours, meta_station, madis_network, madis_vars,
                  external_network, external_vars, external_data_object, station_split,
-                 ghost_init_mode, sensor_dropout, sensor_dropout_ratio, data_path=Path('')):
+                 ghost_init_mode, sensor_dropout, sensor_dropout_ratio, past_only=False, data_path=Path('')):
 
         self.year = year
         self.back_hrs = back_hrs
@@ -33,6 +33,7 @@ class MixData(Dataset):
         self.ghost_init_mode = ghost_init_mode
         self.sensor_dropout = sensor_dropout
         self.sensor_dropout_ratio = sensor_dropout_ratio
+        self.past_only = past_only
 
         self.time_line = pd.to_datetime(pd.Series(list(
             rrule.rrule(rrule.HOURLY, dtstart=datetime.strptime(f'{year}-01-01', '%Y-%m-%d'),
@@ -105,6 +106,7 @@ class MixData(Dataset):
         index_end = index + self.back_hrs + self.lead_hours
 
         time_sel = self.time_line[index_start:index_end + 1]
+        time_sel_hist = self.time_line[index_start:index + self.back_hrs + 1]
 
         sample = {
             f'time': torch.tensor([t_val.astype(np.int64) for t_val in time_sel.values]),
@@ -113,16 +115,31 @@ class MixData(Dataset):
             f'k_edge_index': self.madis_network.k_edge_index,
         }
 
-        madis_data = self.madis_data.sel(time=slice(time_sel[0], time_sel[-1]))
-        for madis_var in self.madis_vars:
-            madis_val = madis_data[madis_var.name].values.astype(np.float32)
-            madis_val = self._apply_ghost_initialization(madis_val)
-            madis_val = torch.from_numpy(madis_val)
-            sample[madis_var] = madis_val
+        if self.past_only:
+            madis_hist = self.madis_data.sel(time=slice(time_sel_hist[0], time_sel_hist[-1]))
+            madis_target = self.madis_data.sel(time=time_sel[-1])
 
-            var_name_is_real = madis_var.name + '_is_real'
-            madis_val_is_real = madis_data[var_name_is_real].values.astype(np.float32)
-            sample[var_name_is_real] = madis_val_is_real
+            for madis_var in self.madis_vars:
+                madis_val = madis_hist[madis_var.name].values.astype(np.float32)
+                madis_val = self._apply_ghost_initialization(madis_val)
+                sample[madis_var] = torch.from_numpy(madis_val)
+
+                var_name_is_real = madis_var.name + '_is_real'
+                sample[var_name_is_real] = madis_hist[var_name_is_real].values.astype(np.float32)
+
+                sample['target_' + madis_var.name] = madis_target[madis_var.name].values.astype(np.float32)
+                sample['target_' + var_name_is_real] = madis_target[var_name_is_real].values.astype(np.float32)
+        else:
+            madis_data = self.madis_data.sel(time=slice(time_sel[0], time_sel[-1]))
+            for madis_var in self.madis_vars:
+                madis_val = madis_data[madis_var.name].values.astype(np.float32)
+                madis_val = self._apply_ghost_initialization(madis_val)
+                madis_val = torch.from_numpy(madis_val)
+                sample[madis_var] = madis_val
+
+                var_name_is_real = madis_var.name + '_is_real'
+                madis_val_is_real = madis_data[var_name_is_real].values.astype(np.float32)
+                sample[var_name_is_real] = madis_val_is_real
 
         sample['seen_station_mask'] = torch.from_numpy(self.seen_station_mask.astype(np.float32))
         sample['ghost_station_mask'] = torch.from_numpy(self.ghost_station_mask.astype(np.float32))
@@ -138,8 +155,11 @@ class MixData(Dataset):
                 sample[f'external_lat'] = 1
 
             for external_var in self.external_vars:
-                external_val = self.external_data_object.getSample(time_sel, external_var.name, self.external_network,
-                                                                   self.back_hrs + 1, self.lead_hours)
+                external_time_sel = time_sel_hist if self.past_only else time_sel
+                external_lead = 0 if self.past_only else self.lead_hours
+                external_val = self.external_data_object.getSample(external_time_sel, external_var.name,
+                                                                   self.external_network,
+                                                                   self.back_hrs + 1, external_lead)
                 sample['ext_' + external_var.name] = external_val
 
         return sample
