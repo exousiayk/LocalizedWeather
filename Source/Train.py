@@ -1,3 +1,4 @@
+
 import argparse
 import json
 import os
@@ -39,9 +40,9 @@ if __name__ == '__main__':
     parser.add_argument('--madis_control_ratio', default=.9, type=float)
 
     # Experiment Hyperparameters
-    parser.add_argument('--lead_hrs', default=12, type=int)
+    parser.add_argument('--lead_hrs', default=48, type=int)
     parser.add_argument('--back_hrs', default=48, type=int)
-    parser.add_argument('--past_only', default=0, type=int)
+    parser.add_argument('--past_only', default=1, type=int)
     parser.add_argument('--n_neighbors_m2m', default=4, type=int)
     parser.add_argument('--n_neighbors_e2m', default=1, type=int)
     parser.add_argument('--n_neighbors_h2m', default=0, type=int)
@@ -54,7 +55,7 @@ if __name__ == '__main__':
     parser.add_argument('--hidden_dim', default=128, type=int)
     parser.add_argument('--lr', default=1e-4, type=float)
     parser.add_argument('--loss_function_type', default=LossFunctionType.CUSTOM.value, type=int)
-    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--epochs', default=20, type=int)
     parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
     parser.add_argument('--n_passing', default=4, type=int)
